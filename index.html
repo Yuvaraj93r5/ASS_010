@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Industrial Predictive Maintenance Dashboard</title>
+    <script src="https://tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6">
+    <div class="max-w-7xl mx-auto">
+        <header class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
+            <h1 class="text-3xl font-bold tracking-tight text-blue-400">🏭 Industrial IoT Predictive Maintenance System</h1>
+            <div id="system-clock" class="text-gray-400 text-sm"></div>
+        </header>
+
+        <!-- Analytics Overview Cards -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-md">
+                <p class="text-sm text-gray-400 font-medium">Total Machines</p>
+                <p id="stat-total" class="text-3xl font-bold mt-1 text-white">5</p>
+            </div>
+            <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-md">
+                <p class="text-sm text-gray-400 font-medium">Operational Machines</p>
+                <p id="stat-operational" class="text-3xl font-bold mt-1 text-green-400">0</p>
+            </div>
+            <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-md">
+                <p class="text-sm text-gray-400 font-medium">Total Downtime (Hrs)</p>
+                <p id="stat-downtime" class="text-3xl font-bold mt-1 text-amber-400">0</p>
+            </div>
+            <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-md bg-gradient-to-br from-gray-800 to-red-950/20">
+                <p class="text-sm text-gray-400 font-medium">Highest Maintenance Risk</p>
+                <p id="stat-risk" class="text-xl font-bold mt-2 text-red-400 truncate">None</p>
+            </div>
+        </section>
+
+        <!-- Filters Section -->
+        <section class="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-8 flex flex-wrap gap-4 items-center">
+            <div class="flex flex-col">
+                <label class="text-xs text-gray-400 mb-1">Filter by Status</label>
+                <select id="filter-status" class="bg-gray-700 text-white rounded px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="all">All Statuses</option>
+                    <option value="Running">Running</option>
+                    <option value="Maintenance Required">Maintenance Required</option>
+                    <option value="Downtime">Downtime</option>
+                </select>
+            </div>
+            <div class="flex flex-col">
+                <label class="text-xs text-gray-400 mb-1">Filter by Production Unit</label>
+                <select id="filter-unit" class="bg-gray-700 text-white rounded px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="all">All Units</option>
+                    <option value="Assembly-A">Assembly-A</option>
+                    <option value="Welding-B">Welding-B</option>
+                    <option value="Packaging-C">Packaging-C</option>
+                </select>
+            </div>
+            <button onclick="resetFilters()" class="mt-4 sm:mt-0 ml-auto bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm transition font-medium">Reset</button>
+        </section>
+
+        <!-- Alerts Section -->
+        <div id="alerts-container" class="space-y-3 mb-8"></div>
+
+        <!-- Main Data Layout Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Equipment Live Status Table -->
+            <div class="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 p-6 overflow-hidden">
+                <h2 class="text-xl font-semibold mb-4 text-white">Live Equipment Telemetry</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-gray-700 text-gray-400 text-sm">
+                                <th class="pb-3">Machine ID</th>
+                                <th class="pb-3">Unit</th>
+                                <th class="pb-3">Hours</th>
+                                <th class="pb-3">Temp (°C)</th>
+                                <th class="pb-3">Vibration (mm/s)</th>
+                                <th class="pb-3">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="machine-table-body" class="divide-y divide-gray-700/50 text-sm">
+                            <!-- Injected dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Maintenance Priority & Action Recommendations -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-xl font-semibold mb-4 text-white">Predictive Maintenance Priority</h2>
+                <div id="priority-list" class="space-y-4">
+                    <!-- Injected dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulated Equipment Database
+        const initialMachines = [
+            { id: "MCH-001", unit: "Assembly-A", hours: 1240, temp: 72, vibration: 4.2, status: "Running", dueWeeks: 6, downtime: 12 },
+            { id: "MCH-002", unit: "Welding-B", hours: 3100, temp: 84, vibration: 7.8, status: "Maintenance Required", dueWeeks: 1, downtime: 45 },
+            { id: "MCH-003", unit: "Assembly-A", hours: 940, temp: 65, vibration: 3.1, status: "Running", dueWeeks: 12, downtime: 4 },
+            { id: "MCH-004", unit: "Packaging-C", hours: 4220, temp: 79, vibration: 9.2, status: "Maintenance Required", dueWeeks: 2, downtime: 80 },
+            { id: "MCH-005", unit: "Welding-B", hours: 1850, temp: 92, vibration: 5.5, status: "Downtime", dueWeeks: 0, downtime: 110 }
+        ];
+
+        // Intentionally broken build simulation block for QA testing (Step 4 verification)
+        // Set to true via environment or console to mock a broken webapp application container
+        const SIMULATE_CRASH = false; 
+        if (SIMULATE_CRASH) {
+            document.body.innerHTML = `<div class="flex items-center justify-center h-screen bg-black"><h1 class="text-5xl text-red-600 font-extrabold">500 INTERNAL SERVER ERROR: CRITICAL TELEMETRY LOOP FAILURE</h1></div>`;
+            throw new Error("Application Deployment Crashed.");
+        }
+
+        function renderDashboard() {
+            const statusFilter = document.getElementById('filter-status').value;
+            const unitFilter = document.getElementById('filter-unit').value;
+            
+            const filtered = initialMachines.filter(m => {
+                return (statusFilter === 'all' || m.status === statusFilter) &&
+                       (unitFilter === 'all' || m.unit === unitFilter);
+            });
+
+            // Calculate Analytics Metrics
+            const totalOperational = initialMachines.filter(m => m.status === "Running").length;
+            const totalDowntime = initialMachines.reduce((acc, m) => acc + m.downtime, 0);
+            
+            // Predictive Risk Modeling (Highest risk based on combinations of Temp > 80 and Vibration > 7.0)
+            let highestRiskMachine = "None";
+            let maxRiskScore = -1;
+            initialMachines.forEach(m => {
+                let score = 0;
+                if (m.temp > 80) score += 50;
+                if (m.vibration > 7.0) score += 50;
+                if (m.status === "Downtime") score = 0; // already offline
+                if (score > maxRiskScore && score > 0) {
+                    maxRiskScore = score;
+                    highestRiskMachine = `${m.id} (${m.unit})`;
+                }
+            });
+
+            // Display Analytics Metrics
+            document.getElementById('stat-operational').innerText = totalOperational;
+            document.getElementById('stat-downtime').innerText = totalDowntime;
+            document.getElementById('stat-risk').innerText = highestRiskMachine;
+
+            // Render Alert Banners
+            const alertsContainer = document.getElementById('alerts-container');
+            alertsContainer.innerHTML = '';
+            
+            initialMachines.forEach(m => {
+                if (m.temp >= 80 || m.vibration >= 7.0) {
+                    const isCritical = m.temp >= 80 && m.vibration >= 7.0;
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = `p-4 rounded border text-sm ${isCritical ? 'bg-red-950/40 border-red-800 text-red-200' : 'bg-amber-950/40 border-amber-800 text-amber-200'}`;
+                    
+                    let messages = [];
+                    if (m.temp >= 80) messages.push(`Critical Temperature threshold exceeded (${m.temp}°C)`);
+                    if (m.vibration >= 7.0) messages.push(`Abnormal Vibration profile detected (${m.vibration} mm/s)`);
+                    
+                    alertDiv.innerHTML = `<strong>⚠️ ALERT [${m.id}]:</strong> ${messages.join(' & ')}. Action required immediately.`;
+                    alertsContainer.appendChild(alertDiv);
+                }
+            });
+
+            // Render Main Telemetry Table
+            const tbody = document.getElementById('machine-table-body');
+            tbody.innerHTML = '';
+            filtered.forEach(m => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-800/50 transition";
+                
+                let statusBadge = '';
+                if(m.status === 'Running') statusBadge = '<span class="px-2 py-1 text-xs rounded-full bg-green-950 text-green-400 border border-green-800">Running</span>';
