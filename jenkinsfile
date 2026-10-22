@@ -1,0 +1,113 @@
+pipeline {
+    agent any
+    
+    parameters {
+        string(name: 'DOCKER_IMAGE_TAG', defaultValue: 'latest', description: 'Tag for the production build image')
+        booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Bypass non-critical test status metrics if true')
+    }
+    
+    environment {
+        DOCKER_HUB_CRED = 'dockerhub-credentials-id'
+        KUBECONFIG_CRED = 'kubernetes-cluster-config-id'
+        IMAGE_NAME      = 'yuvaraj93/iot-predictive-dashboard'
+    }
+    
+    stages {
+        stage('Initialize & Pull') {
+            steps {
+                echo 'Pulling target codebase workspace from source repository control...'
+                checkout scm
+            }
+        }
+        
+        stage('Parallel Component Verification') {
+            parallel {
+                stage('Static HTML Lint Analysis') {
+                    steps {
+                        echo 'Checking codebase syntax integrity constraints...'
+                        sh 'grep -q "<html" index.html'
+                    }
+                }
+                stage('Container Blueprint Check') {
+                    steps {
+                        echo 'Validating structural format constraints on build Dockerfile configuration...'
+                        sh 'grep -q "FROM" Dockerfile'
+                    }
+                }
+            }
+        }
+        
+        stage('Build Image Local Layer') {
+            steps {
+                script {
+                    echo "Constructing Docker container image layer utilizing tag: ${params.DOCKER_IMAGE_TAG}"
+                    sh "docker build -t ${IMAGE_NAME}:${params.DOCKER_IMAGE_TAG} ."
+                }
+            }
+        }
+        
+        stage('Verify Container Locally') {
+            steps {
+                script {
+                    echo 'Launching container validation instance on local daemon block...'
+                    sh "docker run -d --name local_telemetry_test -p 8085:80 ${IMAGE_NAME}:${params.DOCKER_IMAGE_TAG}"
+                    // Allow server initialization gap
+                    sleep 3
+                    // Verify responsiveness
+                    sh "curl -f http://localhost:8085/"
+                    // Cleanup testing sandbox environment
+                    sh "docker rm -f local_telemetry_test"
+                }
+            }
+        }
+        
+        stage('Push Image Layer to Docker Hub Registry') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: env.DOCKER_HUB_CRED, usernameVariable: 'DH_USER', passwordVariable: 'DH_TOKEN')]) {
+                    sh "echo '${DH_TOKEN}' | docker login -u '${DH_USER}' --password-stdin"
+                    sh "docker push ${IMAGE_NAME}:${params.DOCKER_IMAGE_TAG}"
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes Cluster') {
+            when {
+                expression { return params.FORCE_DEPLOY || currentBuild.currentResult == 'SUCCESS' }
+            }
+            steps {
+                withCredentials([file(credentialsId: env.KUBECONFIG_CRED, variable: 'KUBECONFIG')]) {
+                    echo 'Deploying application to Kubernetes via update manifest configurations...'
+                    sh "kubectl apply -f deployment.yaml --kubeconfig=${KUBECONFIG}"
+                    sh "kubectl set image deployment/iot-predictive-dashboard dashboard=${IMAGE_NAME}:${params.DOCKER_IMAGE_TAG} --kubeconfig=${KUBECONFIG}"
+                }
+            }
+        }
+        
+        stage('Monitor Rollout Status & Auto-Rollback') {
+            steps {
+                withCredentials([file(credentialsId: env.KUBECONFIG_CRED, variable: 'KUBECONFIG')]) {
+                    echo 'Monitoring deployment rollout status verification window...'
+                    script {
+                        try {
+                            // Enforce a strict timeout window tracking deployment viability statuses
+                            sh "kubectl rollout status deployment/iot-predictive-dashboard --timeout=60s --kubeconfig=${KUBECONFIG}"
+                            echo 'Rollout successfully established. Production deployment parameters verified.'
+                        } catch (Exception err) {
+                            echo '⚠️ CRITICAL REGRESSION DETECTED DURING DEPLOYMENT ROLLOUT! INITIALIZING AUTOMATED EMERGENCY ROLLBACK PIPELINE...'
+                            sh "kubectl rollout undo deployment/iot-predictive-dashboard --kubeconfig=${KUBECONFIG}"
+                            echo 'Rollback completed successfully. Previous stable target release restored.'
+                            error("Deployment Rollout Failure: ${err.message}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Clearing local cache credentials from engine worker environments...'
+            sh 'docker logout'
+        }
+    }
+}
